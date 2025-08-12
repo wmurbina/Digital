@@ -23,3 +23,9 @@ jobs:
 
     - name: Build with Maven
       run: mvn clean package
+
+    - name: Upload JAR artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: digital-jar
+        path: target/*.jar
