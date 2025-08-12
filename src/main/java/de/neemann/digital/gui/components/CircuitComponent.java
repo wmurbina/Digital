@@ -28,6 +28,8 @@ import de.neemann.digital.gui.Main;
 import de.neemann.digital.gui.Settings;
 import de.neemann.digital.gui.components.data.DummyElement;
 import de.neemann.digital.gui.components.modification.*;
+import de.neemann.digital.gui.components.mouse.MouseController;
+import de.neemann.digital.gui.components.mouse.MouseControllerWireDrag;
 import de.neemann.digital.lang.Lang;
 import de.neemann.digital.testing.TestCaseElement;
 import de.neemann.digital.undo.*;
@@ -127,6 +129,7 @@ public class CircuitComponent extends JComponent implements ChangedListener, Lib
     private final MouseController mouseRun;
     private final MouseControllerInsertCopied mouseInsertList;
     private final MouseControllerResizeRect mouseResizeRect;
+    private final MouseControllerWireDrag mouseWireDrag;
     private final Cursor moveCursor;
     private final ToolTipAction copyAction;
     private final ToolTipAction cutAction;
@@ -272,6 +275,7 @@ public class CircuitComponent extends JComponent implements ChangedListener, Lib
         mouseMoveSelected = new MouseControllerMoveSelected(moveCursor);
         mouseRun = new MouseControllerRun(normalCursor);
         mouseResizeRect = new MouseControllerResizeRect(normalCursor);
+        mouseWireDrag = new MouseControllerWireDrag(this, new Cursor(Cursor.CROSSHAIR_CURSOR));
 
         undoManager = new UndoManager<>(new Circuit());
         addListener(this);
@@ -1013,11 +1017,11 @@ public class CircuitComponent extends JComponent implements ChangedListener, Lib
         enableUndoRedo();
     }
 
-    private Vector getPosVector(MouseEvent e) {
+    public Vector getPosVector(MouseEvent e) {
         return getPosVector(e.getX(), e.getY());
     }
 
-    private Vector getPosVector(int x, int y) {
+    public Vector getPosVector(int x, int y) {
         try {
             Point2D.Float p = new Point2D.Float();
             transform.inverseTransform(new Point(x, y), p);
@@ -1456,7 +1460,7 @@ public class CircuitComponent extends JComponent implements ChangedListener, Lib
         modify(builder.build());
     }
 
-    private VisualElement getActualVisualElement() {
+    public VisualElement getActualVisualElement() {
         if (activeMouseController instanceof MouseControllerMoveElement)
             mouseNormal.activate();
 
@@ -1698,71 +1702,17 @@ public class CircuitComponent extends JComponent implements ChangedListener, Lib
         }
     }
 
-    //MouseController can not be final because its overridden. Maybe checkstyle has a bug?
-    //CHECKSTYLE.OFF: FinalClass
-    private class MouseController {
-        private final Cursor mouseCursor;
-
-        private MouseController(Cursor mouseCursor) {
-            this.mouseCursor = mouseCursor;
-        }
-
-        void activate() {
-            if (activeMouseController != null && activeMouseController != this)
-                activeMouseController.deactivate();
-            activeMouseController = this;
-            shallowCopy = null;
-            deleteAction.setEnabled(false);
-            copyAction.setEnabled(false);
-            cutAction.setEnabled(false);
-            rotateAction.setEnabled(false);
-            setCursor(mouseCursor);
-            graphicHasChanged();
-        }
-
-        void deactivate() {
-        }
-
-        void clicked(MouseEvent e) {
-        }
-
-        void pressed(MouseEvent e) {
-        }
-
-        void released(MouseEvent e) {
-        }
-
-        void moved(MouseEvent e) {
-        }
-
-        /**
-         * Is called if the mouse is dragged.
-         * If this method returns false, the circuit is moved instead.
-         *
-         * @param e the mouse event
-         * @return false is drag is not handled by controller
-         */
-        boolean dragged(MouseEvent e) {
-            return false;
-        }
-
-        public int drawables() {
-            return 0;
-        }
-
-        public void drawTo(Graphic gr) {
-        }
-
-        public void delete() {
-        }
-
-        public void rotate() {
-        }
-
-        public void escapePressed() {
-        }
+    public MouseController getActiveMouseController() {
+        return activeMouseController;
     }
 
+    public void setActiveMouseController(MouseController activeMouseController) {
+        this.activeMouseController = activeMouseController;
+    }
+
+    public void setShallowCopy(Circuit shallowCopy) {
+        this.shallowCopy = shallowCopy;
+    }
 
     private SearchResult getVisualElement(Vector pos, boolean includeText) {
         List<VisualElement> list = getCircuit().getElementListAt(pos, includeText);
@@ -1781,23 +1731,27 @@ public class CircuitComponent extends JComponent implements ChangedListener, Lib
 
     //CHECKSTYLE.ON: FinalClass
 
-    private final class MouseControllerNormal extends MouseController {
+    public MouseController getMouseNormal() {
+        return mouseNormal;
+    }
+
+    public final class MouseControllerNormal extends de.neemann.digital.gui.components.mouse.MouseController {
         private Vector pos;
         private MouseEvent downButton;
         private VisualElement pressedElement;
 
         private MouseControllerNormal(Cursor cursor) {
-            super(cursor);
+            super(CircuitComponent.this, cursor);
         }
 
         @Override
-        void activate() {
+        public void activate() {
             super.activate();
             pos = null;
         }
 
         @Override
-        void clicked(MouseEvent e) {
+        public void clicked(MouseEvent e) {
             Vector pos = getPosVector(e);
 
             if (mouse.isSecondaryClick(e)) {
@@ -1810,7 +1764,7 @@ public class CircuitComponent extends JComponent implements ChangedListener, Lib
                     case FOUND:
                         VisualElement vp = sel.getVisualElement();
                         if (vp.isPinPos(raster(pos)) && !mouse.isClickModifier(e)) {
-                            if (!isLocked()) mouseWireRect.activate(pos);
+                            if (!isLocked()) mouseWireDrag.activate(vp.getPinAt(raster(pos)), pos);
                         } else
                             mouseMoveElement.activate(vp, pos);
                         break;
@@ -1829,24 +1783,24 @@ public class CircuitComponent extends JComponent implements ChangedListener, Lib
         }
 
         @Override
-        void deactivate() {
+        public void deactivate() {
             removeHighLighted();
         }
 
         @Override
-        void pressed(MouseEvent e) {
+        public void pressed(MouseEvent e) {
             downButton = e;
             pos = getPosVector(e);
             pressedElement = getCircuit().getElementAt(pos, false);
         }
 
         @Override
-        void released(MouseEvent e) {
+        public void released(MouseEvent e) {
             pressedElement = null;
         }
 
         @Override
-        boolean dragged(MouseEvent e) {
+        public boolean dragged(MouseEvent e) {
             if (mouse.isPrimaryClick(downButton)) {
                 Vector p = getPosVector(e);
                 if (pos == null)
@@ -1861,16 +1815,16 @@ public class CircuitComponent extends JComponent implements ChangedListener, Lib
         }
     }
 
-    private final class MouseControllerInsertElement extends MouseController {
+    public final class MouseControllerInsertElement extends de.neemann.digital.gui.components.mouse.MouseController {
         private VisualElement element;
         private Vector delta;
         private boolean minRaster;
 
         private MouseControllerInsertElement(Cursor cursor) {
-            super(cursor);
+            super(CircuitComponent.this, cursor);
         }
 
-        private void activate(VisualElement element) {
+        public void activate(VisualElement element) {
             super.activate();
             this.element = element;
             delta = null;
@@ -1880,7 +1834,7 @@ public class CircuitComponent extends JComponent implements ChangedListener, Lib
         }
 
         @Override
-        void moved(MouseEvent e) {
+        public void moved(MouseEvent e) {
             updateMousePos(getPosVector(e));
         }
 
@@ -1905,7 +1859,7 @@ public class CircuitComponent extends JComponent implements ChangedListener, Lib
         }
 
         @Override
-        void clicked(MouseEvent e) {
+        public void clicked(MouseEvent e) {
             if (mouse.isPrimaryClick(e) && !isLocked()) {
                 modify(new ModifyInsertElement(element));
                 insertWires(element);
@@ -1985,17 +1939,17 @@ public class CircuitComponent extends JComponent implements ChangedListener, Lib
             circuitScrollPanel.transformChanged(transform);
     }
 
-    private final class MouseControllerMoveElement extends MouseController {
+    public final class MouseControllerMoveElement extends de.neemann.digital.gui.components.mouse.MouseController {
         private VisualElement visualElement;
         private Vector delta;
         private VisualElement originalVisualElement;
         private boolean minRaster;
 
         private MouseControllerMoveElement(Cursor cursor) {
-            super(cursor);
+            super(CircuitComponent.this, cursor);
         }
 
-        private void activate(VisualElement visualElement, Vector pos) {
+        public void activate(VisualElement visualElement, Vector pos) {
             super.activate();
             originalVisualElement = visualElement;
             this.visualElement = new VisualElement(visualElement);
@@ -2010,7 +1964,7 @@ public class CircuitComponent extends JComponent implements ChangedListener, Lib
         }
 
         @Override
-        void clicked(MouseEvent e) {
+        public void clicked(MouseEvent e) {
             if (!isLocked()) {
                 visualElement.setPos(visualElement.getPos());
                 if (!visualElement.getPos().equals(originalVisualElement.getPos())
@@ -2023,7 +1977,7 @@ public class CircuitComponent extends JComponent implements ChangedListener, Lib
         }
 
         @Override
-        void moved(MouseEvent e) {
+        public void moved(MouseEvent e) {
             if (!isLocked()) {
                 Vector pos = getPosVector(e);
                 visualElement.setPos(toMinRaster(pos.add(delta), minRaster));
@@ -2060,16 +2014,16 @@ public class CircuitComponent extends JComponent implements ChangedListener, Lib
         }
     }
 
-    private final class MouseControllerMoveWire extends MouseController {
+    public final class MouseControllerMoveWire extends de.neemann.digital.gui.components.mouse.MouseController {
         private Wire wire;
         private Vector pos;
         private Wire originalWire;
 
         private MouseControllerMoveWire(Cursor cursor) {
-            super(cursor);
+            super(CircuitComponent.this, cursor);
         }
 
-        private void activate(Wire wire, Vector pos) {
+        public void activate(Wire wire, Vector pos) {
             super.activate();
             originalWire = wire;
             shallowCopy = getCircuit().createShallowCopy();
@@ -2082,7 +2036,7 @@ public class CircuitComponent extends JComponent implements ChangedListener, Lib
         }
 
         @Override
-        void clicked(MouseEvent e) {
+        public void clicked(MouseEvent e) {
             if (!originalWire.p1.equals(wire.p1)) {
                 removeHighLighted();
                 modify(new ModifyMoveWire(originalWire, wire));
@@ -2092,7 +2046,7 @@ public class CircuitComponent extends JComponent implements ChangedListener, Lib
         }
 
         @Override
-        void moved(MouseEvent e) {
+        public void moved(MouseEvent e) {
             Vector pos = raster(getPosVector(e));
             final Vector delta = pos.sub(this.pos);
             if (!delta.isZero()) {
@@ -2123,26 +2077,26 @@ public class CircuitComponent extends JComponent implements ChangedListener, Lib
         }
     }
 
-    private final class MouseControllerWireDiag extends MouseController {
+    public final class MouseControllerWireDiag extends de.neemann.digital.gui.components.mouse.MouseController {
         private Wire wire;
 
         private MouseControllerWireDiag(Cursor cursor) {
-            super(cursor);
+            super(CircuitComponent.this, cursor);
         }
 
-        private void activate(Vector startPos, Vector endPos) {
+        public void activate(Vector startPos, Vector endPos) {
             super.activate();
             wire = new Wire(raster(startPos), raster(endPos));
         }
 
         @Override
-        void moved(MouseEvent e) {
+        public void moved(MouseEvent e) {
             wire.setP2(raster(getPosVector(e)));
             repaint();
         }
 
         @Override
-        void clicked(MouseEvent e) {
+        public void clicked(MouseEvent e) {
             if (mouse.isClickModifier(e)) {
                 Vector pos = raster(getPosVector(e));
                 Wire wire = getCircuit().getWireAt(pos, SIZE2);
@@ -2172,12 +2126,12 @@ public class CircuitComponent extends JComponent implements ChangedListener, Lib
             mouseNormal.activate();
         }
 
-        private void rectangularWire() {
+        public void rectangularWire() {
             mouseWireRect.activate(wire.p1, wire.p2);
         }
     }
 
-    private final class MouseControllerWireRect extends MouseController {
+    public final class MouseControllerWireRect extends de.neemann.digital.gui.components.mouse.MouseController {
         private Wire wire1;
         private Wire wire2;
         private boolean selectionMade;
@@ -2186,16 +2140,16 @@ public class CircuitComponent extends JComponent implements ChangedListener, Lib
         private Vector lastPosition;
 
         private MouseControllerWireRect(Cursor cursor) {
-            super(cursor);
+            super(CircuitComponent.this, cursor);
         }
 
-        private void activate(Vector startPos) {
+        public void activate(Vector startPos) {
             startPos = raster(startPos);
             activate(startPos, startPos);
             selectionMade = false;
         }
 
-        private void activate(Vector startPos, Vector endPos) {
+        public void activate(Vector startPos, Vector endPos) {
             super.activate();
             initialPos = raster(startPos);
             wire1 = new Wire(startPos, endPos);
@@ -2206,7 +2160,7 @@ public class CircuitComponent extends JComponent implements ChangedListener, Lib
         }
 
         @Override
-        void moved(MouseEvent e) {
+        public void moved(MouseEvent e) {
             lastPosition = raster(getPosVector(e));
             if (!selectionMade) {
                 Vector delta = lastPosition.sub(initialPos);
@@ -2233,7 +2187,7 @@ public class CircuitComponent extends JComponent implements ChangedListener, Lib
         }
 
         @Override
-        void clicked(MouseEvent e) {
+        public void clicked(MouseEvent e) {
             if (mouse.isClickModifier(e)) {
                 Vector pos = raster(getPosVector(e));
                 Wire wire = getCircuit().getWireAt(pos, SIZE2);
@@ -2271,28 +2225,28 @@ public class CircuitComponent extends JComponent implements ChangedListener, Lib
             mouseNormal.activate();
         }
 
-        void diagonalWire() {
+        public void diagonalWire() {
             mouseWireDiag.activate(initialPos, wire2.p2);
             repaint();
         }
 
-        private void flipWire() {
+        public void flipWire() {
             selectionMade = true;
             firstHorizontal = !firstHorizontal;
             setWires();
         }
     }
 
-    private final class MouseControllerWireSplit extends MouseController {
+    public final class MouseControllerWireSplit extends de.neemann.digital.gui.components.mouse.MouseController {
         private Wire wire1;
         private Wire wire2;
         private Wire origWire;
 
         private MouseControllerWireSplit(Cursor cursor) {
-            super(cursor);
+            super(CircuitComponent.this, cursor);
         }
 
-        private void activate(Wire w, Vector startPos) {
+        public void activate(Wire w, Vector startPos) {
             super.activate();
             startPos = raster(startPos);
             origWire = w;
@@ -2303,7 +2257,7 @@ public class CircuitComponent extends JComponent implements ChangedListener, Lib
         }
 
         @Override
-        void moved(MouseEvent e) {
+        public void moved(MouseEvent e) {
             Vector p = raster(getPosVector(e));
             wire1.setP2(p);
             wire2.setP1(p);
@@ -2311,7 +2265,7 @@ public class CircuitComponent extends JComponent implements ChangedListener, Lib
         }
 
         @Override
-        void clicked(MouseEvent e) {
+        public void clicked(MouseEvent e) {
             if (mouse.isPrimaryClick(e)) {
                 Modifications.Builder<Circuit> m = new Modifications.Builder<>(Lang.get("mod_splitWire"));
                 m.add(new ModifyDeleteWire(origWire));
@@ -2335,7 +2289,7 @@ public class CircuitComponent extends JComponent implements ChangedListener, Lib
         }
     }
 
-    private final class MouseControllerSelect extends MouseController {
+    public final class MouseControllerSelect extends de.neemann.digital.gui.components.mouse.MouseController {
         private static final int MIN_SIZE = 8;
         private Vector corner1;
         private Vector corner2;
@@ -2343,10 +2297,10 @@ public class CircuitComponent extends JComponent implements ChangedListener, Lib
         private boolean moveOnDragging;
 
         private MouseControllerSelect(Cursor cursor) {
-            super(cursor);
+            super(CircuitComponent.this, cursor);
         }
 
-        private void activate(Vector corner1, Vector corner2) {
+        public void activate(Vector corner1, Vector corner2) {
             super.activate();
             this.corner1 = corner1;
             this.corner2 = corner2;
@@ -2359,7 +2313,7 @@ public class CircuitComponent extends JComponent implements ChangedListener, Lib
         }
 
         @Override
-        void clicked(MouseEvent e) {
+        public void clicked(MouseEvent e) {
             if (mouse.isPrimaryClick(e)) {
                 mouseNormal.activate();
                 removeHighLighted();
@@ -2371,7 +2325,7 @@ public class CircuitComponent extends JComponent implements ChangedListener, Lib
         }
 
         @Override
-        void released(MouseEvent e) {
+        public void released(MouseEvent e) {
             wasReleased = true;
             Vector dif = corner1.sub(corner2);
             if (Math.abs(dif.x) > MIN_SIZE && Math.abs(dif.y) > MIN_SIZE)
@@ -2383,12 +2337,12 @@ public class CircuitComponent extends JComponent implements ChangedListener, Lib
         }
 
         @Override
-        void pressed(MouseEvent e) {
+        public void pressed(MouseEvent e) {
             moveOnDragging = mouse.isPrimaryClick(e);
         }
 
         @Override
-        boolean dragged(MouseEvent e) {
+        public boolean dragged(MouseEvent e) {
             if (wasReleased) {
                 if (moveOnDragging) {
                     if (!isLocked())
@@ -2465,7 +2419,7 @@ public class CircuitComponent extends JComponent implements ChangedListener, Lib
         }
     }
 
-    private final class MouseControllerMoveSelected extends MouseController {
+    public final class MouseControllerMoveSelected extends de.neemann.digital.gui.components.mouse.MouseController {
         private Circuit.RectContainer elements;
         private Vector lastPos;
         private Vector center;
@@ -2475,10 +2429,10 @@ public class CircuitComponent extends JComponent implements ChangedListener, Lib
         private Vector max;
 
         private MouseControllerMoveSelected(Cursor cursor) {
-            super(cursor);
+            super(CircuitComponent.this, cursor);
         }
 
-        private void activate(Vector corner1, Vector corner2, Vector pos) {
+        public void activate(Vector corner1, Vector corner2, Vector pos) {
             super.activate();
             rotateAction.setEnabled(true);
             lastPos = pos;
@@ -2499,12 +2453,12 @@ public class CircuitComponent extends JComponent implements ChangedListener, Lib
         }
 
         @Override
-        void moved(MouseEvent e) {
+        public void moved(MouseEvent e) {
             lastPos = getPosVector(e);
         }
 
         @Override
-        boolean dragged(MouseEvent e) {
+        public boolean dragged(MouseEvent e) {
             Vector pos = getPosVector(e);
             Vector delta = raster(pos.sub(lastPos));
 
@@ -2521,7 +2475,7 @@ public class CircuitComponent extends JComponent implements ChangedListener, Lib
         }
 
         @Override
-        void released(MouseEvent e) {
+        public void released(MouseEvent e) {
             if (accumulatedDelta.x != 0 || accumulatedDelta.y != 0 || accumulatedRotate != 0) {
                 modify(new ModifyMoveSelected(min, max, accumulatedDelta, accumulatedRotate, center));
                 getCircuit().elementsMoved();
@@ -2553,15 +2507,15 @@ public class CircuitComponent extends JComponent implements ChangedListener, Lib
         }
     }
 
-    private final class MouseControllerInsertCopied extends MouseController {
+    public final class MouseControllerInsertCopied extends de.neemann.digital.gui.components.mouse.MouseController {
         private ArrayList<Movable> elements;
         private Vector lastPos;
 
         private MouseControllerInsertCopied(Cursor cursor) {
-            super(cursor);
+            super(CircuitComponent.this, cursor);
         }
 
-        private void activate(ArrayList<Movable> elements, Vector pos) {
+        public void activate(ArrayList<Movable> elements, Vector pos) {
             super.activate();
             this.elements = elements;
             lastPos = pos;
@@ -2593,7 +2547,7 @@ public class CircuitComponent extends JComponent implements ChangedListener, Lib
         }
 
         @Override
-        void moved(MouseEvent e) {
+        public void moved(MouseEvent e) {
             if (elements != null) {
                 Vector pos = getPosVector(e);
                 Vector delta = raster(pos.sub(lastPos));
@@ -2629,7 +2583,7 @@ public class CircuitComponent extends JComponent implements ChangedListener, Lib
         }
 
         @Override
-        void clicked(MouseEvent e) {
+        public void clicked(MouseEvent e) {
             if (elements != null && mouse.isPrimaryClick(e)) {
                 Modifications.Builder<Circuit> builder = new Modifications.Builder<>(Lang.get("mod_insertCopied"));
                 ArrayList<Wire> wires = new ArrayList<>();
@@ -2661,15 +2615,15 @@ public class CircuitComponent extends JComponent implements ChangedListener, Lib
         void interact(CircuitComponent cc, Point p, Vector posInComponent, SyncAccess modelSync);
     }
 
-    private final class MouseControllerRun extends MouseController {
+    public final class MouseControllerRun extends de.neemann.digital.gui.components.mouse.MouseController {
         private VisualElement draggedElement;
 
         private MouseControllerRun(Cursor cursor) {
-            super(cursor);
+            super(CircuitComponent.this, cursor);
         }
 
         @Override
-        void pressed(MouseEvent e) {
+        public void pressed(MouseEvent e) {
             VisualElement ve = getInteractiveElementAt(e);
             if (ve != null) {
                 interact(e, ve::elementPressed);
@@ -2689,7 +2643,7 @@ public class CircuitComponent extends JComponent implements ChangedListener, Lib
         }
 
         @Override
-        void released(MouseEvent e) {
+        public void released(MouseEvent e) {
             if (draggedElement != null) {
                 interact(e, (cc, pos, posInComponent, modelSync1) -> draggedElement.elementReleased(cc, pos, posInComponent, modelSync1));
                 draggedElement = null;
@@ -2697,14 +2651,14 @@ public class CircuitComponent extends JComponent implements ChangedListener, Lib
         }
 
         @Override
-        void clicked(MouseEvent e) {
+        public void clicked(MouseEvent e) {
             VisualElement ve = getInteractiveElementAt(e);
             if (ve != null)
                 interact(e, ve::elementClicked);
         }
 
         @Override
-        boolean dragged(MouseEvent e) {
+        public boolean dragged(MouseEvent e) {
             if (draggedElement != null) {
                 interact(e, (cc, pos, posInComponent, modelSync1) -> draggedElement.elementDragged(cc, pos, posInComponent, modelSync1));
                 return true;
@@ -2719,7 +2673,7 @@ public class CircuitComponent extends JComponent implements ChangedListener, Lib
         }
     }
 
-    private final class MouseControllerResizeRect extends MouseController {
+    public final class MouseControllerResizeRect extends de.neemann.digital.gui.components.mouse.MouseController {
         private VisualElement element;
         private Vector startPos;
 
@@ -2734,10 +2688,10 @@ public class CircuitComponent extends JComponent implements ChangedListener, Lib
         private boolean changeEast;
 
         private MouseControllerResizeRect(Cursor cursor) {
-            super(cursor);
+            super(CircuitComponent.this, cursor);
         }
 
-        void activate(VisualElement element, Vector pos) {
+        public void activate(VisualElement element, Vector pos) {
             super.activate();
             this.element = element;
             this.startPos = raster(pos);
@@ -2794,7 +2748,7 @@ public class CircuitComponent extends JComponent implements ChangedListener, Lib
         }
 
         @Override
-        boolean dragged(MouseEvent e) {
+        public boolean dragged(MouseEvent e) {
             ElementAttributes attributes = element.getElementAttributes();
             Vector d = raster(getPosVector(e)).sub(startPos);
 
@@ -2816,7 +2770,7 @@ public class CircuitComponent extends JComponent implements ChangedListener, Lib
         }
 
         @Override
-        void released(MouseEvent e) {
+        public void released(MouseEvent e) {
             // Flip rectangle vertically or horizontally if needed.
             if (rectWidth < 0) {
                 rectWidth = -rectWidth;
@@ -2883,16 +2837,16 @@ public class CircuitComponent extends JComponent implements ChangedListener, Lib
         mouseNormal.activate();
     }
 
-    private final class MouseControllerWizard extends MouseController {
+    public final class MouseControllerWizard extends de.neemann.digital.gui.components.mouse.MouseController {
         private final WizardNotification wizardNotification;
 
         private MouseControllerWizard(WizardNotification wizardNotification) {
-            super(new Cursor(Cursor.CROSSHAIR_CURSOR));
+            super(CircuitComponent.this, new Cursor(Cursor.CROSSHAIR_CURSOR));
             this.wizardNotification = wizardNotification;
         }
 
         @Override
-        void clicked(MouseEvent e) {
+        public void clicked(MouseEvent e) {
             Vector pos = getPosVector(e);
             SearchResult sel = getVisualElement(pos, true);
             if (sel.getVisualElement() != null)
@@ -2954,4 +2908,5 @@ public class CircuitComponent extends JComponent implements ChangedListener, Lib
             return visualElement;
         }
     }
+
 }
