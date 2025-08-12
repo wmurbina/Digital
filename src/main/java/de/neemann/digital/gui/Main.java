@@ -58,6 +58,7 @@ import de.neemann.digital.testing.TestingDataException;
 import de.neemann.digital.toolchain.Configuration;
 import de.neemann.digital.undo.ChangedListener;
 import de.neemann.digital.undo.Modifications;
+import com.formdev.flatlaf.FlatLightLaf;
 import de.neemann.gui.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -2161,16 +2162,10 @@ public final class Main extends JFrame implements ClosingWindowListener.ConfirmS
         if (LOGGER.isDebugEnabled())
             LOGGER.debug(InfoDialog.getInstance().getRevision());
 
-        /*
-        The Apple look an feel, which can be enabled by choosing the UIManager.getSystemLookAndFeelClassName()
-        on MacOS has problems with the component tree view because it does not support different item heights.
-        Also, the HTML rendering does not seem to be supported. See GitHub #190.
-        Therefore also on MosOS the MetalLookAndFeel is used.
-         */
-        try { // enforce MetalLookAndFeel
-            UIManager.setLookAndFeel("javax.swing.plaf.metal.MetalLookAndFeel");
-        } catch (ClassNotFoundException | InstantiationException | UnsupportedLookAndFeelException | IllegalAccessException e) {
-            e.printStackTrace();
+        try {
+            UIManager.setLookAndFeel(new FlatLightLaf());
+        } catch (Exception ex) {
+            System.err.println("Failed to initialize LaF");
         }
         ToolTipManager.sharedInstance().setDismissDelay(10000);
         URL.setURLStreamHandlerFactory(ElementHelpDialog.createURLStreamHandlerFactory());
